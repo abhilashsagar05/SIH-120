@@ -1,270 +1,340 @@
 # -*- coding: utf-8 -*-
-"""
-================================================================================
-  BAGHEWALA HEAVY OIL FIELD — Well-to-Surface Digital Twin
-  Module : dashboard/app.py
-  Author : Digital Twin Engineering Team (SIH-DS026)
-  Version: 1.0.0
-
-  Purpose
-  -------
-  The interactive Streamlit presentation layer. This dashboard serves as the 
-  command center for the digital twin, polling the FastAPI backend and rendering
-  real-time physics-informed predictions and autonomous control actions.
-  
-  Views:
-  - Thermodynamic: Tracks Boberg-Lantz cooling and exponential viscosity spike.
-  - Elastodynamic: Renders the PINN-generated downhole dynamometer card.
-  - VFD Control: Displays the CNN diagnostic output and the asymmetric 
-    Strokes Per Minute (SPM) commands dynamically mitigating "Rod Floating".
-================================================================================
-"""
-
 import streamlit as st
 import plotly.graph_objs as go
-from plotly.subplots import make_subplots
 import requests
 import time
-import pandas as pd
 
 # ===========================================================================
 # Configuration & Layout Setup
 # ===========================================================================
 st.set_page_config(
-    page_title="Baghewala Digital Twin | SIH-DS026",
+    page_title="WellTwin AI | Baghewala",
     page_icon="🛢️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for dark theme hackathon aesthetic
+# Custom CSS to mimic the Bolt UI Theme
 st.markdown("""
 <style>
+    /* Global Theme */
     .stApp {
-        background-color: #0E1117;
+        background-color: #0b1121;
+        color: #e2e8f0;
     }
-    .metric-container {
-        background-color: #1E1E1E;
+    
+    /* Top Navigation Bar */
+    .top-nav {
+        background-color: #0f172a;
+        padding: 10px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid #1e293b;
+        margin-bottom: 20px;
+        border-radius: 8px;
+    }
+    .nav-item {
+        font-size: 0.9rem;
+        color: #94a3b8;
+    }
+    .nav-value {
+        color: #38bdf8;
+        font-weight: bold;
+    }
+    .status-online {
+        color: #10b981;
+        font-weight: bold;
+    }
+    
+    /* Panel Cards */
+    .panel {
+        background-color: #0f172a;
+        border: 1px solid #1e293b;
+        border-radius: 8px;
         padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #333;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        margin-bottom: 15px;
+        height: 100%;
     }
-    .alert-text-healthy {
-        color: #2ECC71;
+    .panel h4 {
+        margin-top: 0;
+        font-size: 0.95rem;
+        color: #cbd5e1;
+        display: flex;
+        align-items: center;
+    }
+    .metric-value {
+        font-size: 1.8rem;
         font-weight: bold;
-        font-size: 1.2rem;
+        color: #f8fafc;
+        margin: 10px 0 5px 0;
     }
-    .alert-text-warning {
-        color: #F1C40F;
+    .metric-unit {
+        font-size: 1rem;
+        color: #94a3b8;
+    }
+    .metric-trend-down {
+        color: #ef4444;
+        font-size: 0.8rem;
+    }
+    .metric-trend-up {
+        color: #10b981;
+        font-size: 0.8rem;
+    }
+    
+    /* Action Button */
+    .action-btn {
+        background-color: #0ea5e9;
+        color: white;
+        padding: 8px 16px;
+        border-radius: 4px;
+        border: none;
+        width: 100%;
         font-weight: bold;
-        font-size: 1.2rem;
+        margin-top: 10px;
+        cursor: pointer;
     }
-    .alert-text-critical {
-        color: #E74C3C;
-        font-weight: bold;
-        font-size: 1.2rem;
-        animation: blink 1s linear infinite;
+    
+    /* Sidebar Overrides */
+    [data-testid="stSidebar"] {
+        background-color: #080f1e !important;
+        border-right: 1px solid #1e293b;
     }
-    @keyframes blink {
-        50% { opacity: 0.5; }
-    }
+    
+    /* Hide default header */
+    header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-
-# ===========================================================================
-# Session State Initialization (For Historical Trending)
-# ===========================================================================
-if "time_history" not in st.session_state:
-    st.session_state.time_history = []
-if "temp_history" not in st.session_state:
-    st.session_state.temp_history = []
-if "visc_history" not in st.session_state:
-    st.session_state.visc_history = []
-
 API_BASE_URL = "http://localhost:8000"
 
-
 # ===========================================================================
-# Sidebar Controls
+# Sidebar Navigation (Mimicking the UI)
 # ===========================================================================
 with st.sidebar:
-    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/cb/Pump_Jack_in_Texas.jpg/320px-Pump_Jack_in_Texas.jpg", caption="SRP System")
-    st.title("Control Panel")
+    st.markdown("### 📈 WellTwin AI\n<span style='color:#64748b; font-size:0.8rem'>Baghewala Field</span>", unsafe_allow_html=True)
     st.markdown("---")
     
-    st.header("Simulation Control")
-    run_simulation = st.checkbox("🟢 Start Live Simulation", value=False)
+    # Navigation Links
+    menu_items = [
+        "⊞ Overview", "💠 Digital Twin", "🔥 CSS Optimizer", "⚙️ SRP Optimizer",
+        "🧠 AI Predictions", "🛡️ Predictive Maintenance", "🧪 What-If Simulator",
+        "⚖️ Scenario Comparison", "🔔 Alerts & Events", "📄 Reports"
+    ]
+    for item in menu_items:
+        if "Digital Twin" in item:
+            st.markdown(f"<div style='background:#0f172a; padding:8px; border-radius:4px; color:#38bdf8; border-left:3px solid #38bdf8'><b>{item}</b></div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div style='padding:8px; color:#94a3b8;'>{item}</div>", unsafe_allow_html=True)
+            
+    st.markdown("---")
+    st.markdown("<span style='color:#64748b; font-size:0.7rem; letter-spacing:1px'>ENGINEER ONLY</span>", unsafe_allow_html=True)
+    st.markdown("<div style='padding:8px; color:#94a3b8;'>🗄️ Historical Data</div>", unsafe_allow_html=True)
+    st.markdown("<div style='padding:8px; color:#94a3b8;'>📊 Model Performance</div>", unsafe_allow_html=True)
+    st.markdown("<div style='padding:8px; color:#94a3b8;'>⚙️ Settings</div>", unsafe_allow_html=True)
     
     st.markdown("---")
-    st.header("VFD Baseline Config")
-    baseline_spm = st.slider("Nominal Target SPM", min_value=1.0, max_value=10.0, value=6.0, step=0.5)
-    
-    st.markdown("---")
-    st.markdown("**Team SIH-DS026**\n\n*Smart India Hackathon 2026*")
-
+    st.markdown("<span style='color:#64748b; font-size:0.7rem'>ACTIVE ROLE</span><br><div style='background:#0ea5e9; padding:4px 8px; border-radius:4px; display:inline-block; font-size:0.8rem'>Operator</div> <span style='color:#64748b; font-size:0.8rem; margin-left:10px'>Engineer</span>", unsafe_allow_html=True)
 
 # ===========================================================================
-# Main Dashboard Layout
+# Top Navigation Bar
 # ===========================================================================
-st.title("🛢️ Baghewala Well-to-Surface Digital Twin")
-st.markdown("Real-time telemetry, thermodynamics, and autonomous CNN-VFD control for extreme heavy oil extraction.")
+top_bar = """
+<div class="top-nav">
+    <div>
+        <b>Baghewala WellTwin AI</b> <span style='color:#64748b; font-size:0.8rem'>Well-to-Surface Digital Twin</span>
+    </div>
+    <div style='display:flex; gap:20px; align-items:center'>
+        <span class="status-online">● DIGITAL TWIN ONLINE</span>
+        <span class="nav-item">Well: <span class="nav-value">BGW-001</span></span>
+        <span class="nav-item">Data: <span class="nav-value">SYNTHETIC</span></span>
+        <span class="nav-item">Sim: <span style='color:#f1c40f'>PAUSED</span></span>
+        <span class="nav-item">T: 3h</span>
+        <div style='background:#1e293b; padding:4px 8px; border-radius:4px; display:flex; gap:10px'>
+            <span style='color:#10b981'>▶ Start</span>
+            <span style='color:#f1c40f'>⏸ Pause</span>
+            <span style='color:#94a3b8'>↺ Reset</span>
+        </div>
+        <div style='background:#1e293b; padding:4px 8px; border-radius:4px;'>
+            <span style='color:#38bdf8'>1x</span> <span style='color:#94a3b8'>5x 10x</span>
+        </div>
+        <div style='background:#ea580c; color:white; padding:4px 8px; border-radius:4px; font-weight:bold'>SIH Demo</div>
+    </div>
+</div>
+"""
+st.markdown(top_bar, unsafe_allow_html=True)
 
-# Layout Columns
-col_metrics = st.columns(4)
-col_charts_top = st.columns((1.2, 1))
-
-# Placeholders for dynamic rendering
-metric_placeholders = [col.empty() for col in col_metrics]
-thermo_placeholder = col_charts_top[0].empty()
-mech_placeholder = col_charts_top[1].empty()
-control_placeholder = st.empty()
-
+# Title Row
+st.markdown("#### ⚡ Command Centre — Well BGW-001\n<span style='color:#64748b; font-size:0.9rem'>Baghewala Field, Rajasthan, India • Heavy Crude 17-19° API</span>", unsafe_allow_html=True)
 
 # ===========================================================================
-# Real-Time Rendering Loop
+# Metric Cards (Top Row)
 # ===========================================================================
 def fetch_api_data(endpoint: str) -> dict:
     try:
-        resp = requests.get(f"{API_BASE_URL}/{endpoint}", timeout=2)
-        if resp.status_code == 200:
-            return resp.json()
-    except requests.exceptions.RequestException:
-        pass
+        resp = requests.get(f"{API_BASE_URL}/{endpoint}", timeout=1)
+        if resp.status_code == 200: return resp.json()
+    except: pass
     return {}
 
-while run_simulation:
-    # 1. Fetch live data from FastAPI
-    css_data = fetch_api_data("css_status")
-    dyn_data = fetch_api_data("dynamometer")
-    diag_data = fetch_api_data("diagnostics")
-    tele_data = fetch_api_data("telemetry")
+css_data = fetch_api_data("css_status")
+diag_data = fetch_api_data("diagnostics")
 
-    if not (css_data and dyn_data and diag_data and tele_data):
-        st.warning("⚠️ Cannot connect to Backend API. Please ensure `python -m src.api` is running on port 8000.")
-        time.sleep(2)
-        continue
+temp = css_data.get('reservoir_temperature_c', 85.0) if css_data else 85.0
+visc = css_data.get('crude_viscosity_cP', 1689.0) if css_data else 1689.0
 
-    # 2. Update Historical State
-    current_time = css_data.get("simulation_day", 0)
-    st.session_state.time_history.append(current_time)
-    st.session_state.temp_history.append(css_data.get("reservoir_temperature_c", 0))
-    st.session_state.visc_history.append(css_data.get("crude_viscosity_cP", 0))
+m1, m2, m3, m4, m5, m6 = st.columns(6)
 
-    # Keep only recent 200 points to prevent memory overflow
-    if len(st.session_state.time_history) > 200:
-        st.session_state.time_history.pop(0)
-        st.session_state.temp_history.pop(0)
-        st.session_state.visc_history.pop(0)
+with m1:
+    st.markdown(f"""
+    <div class="panel" style="border-top: 3px solid #10b981">
+        <h4>🌡️ RESERVOIR TEMP</h4>
+        <div class="metric-value">{temp:.1f} <span class="metric-unit">°C</span></div>
+        <div class="metric-trend-down">↓ 0.0°C</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # 3. Render Top Metrics
-    vfd_cmd = diag_data.get("vfd_command", {})
-    probs = diag_data.get("cnn_probabilities", {})
-    is_floating = diag_data.get("rod_floating_alert", False)
-    
-    with metric_placeholders[0].container():
-        st.metric(label="🌡️ Heated Zone Temp", value=f"{css_data.get('reservoir_temperature_c', 0):.1f} °C")
-    with metric_placeholders[1].container():
-        st.metric(label="💧 Crude Viscosity", value=f"{css_data.get('crude_viscosity_cP', 0):,.0f} cP")
-    with metric_placeholders[2].container():
-        st.metric(label="⬆️ Upstroke SPM", value=f"{vfd_cmd.get('upstroke_spm', 0):.1f}")
-    with metric_placeholders[3].container():
-        st.metric(label="⬇️ Downstroke SPM", value=f"{vfd_cmd.get('downstroke_spm', 0):.1f}")
+with m2:
+    st.markdown(f"""
+    <div class="panel" style="border-top: 3px solid #38bdf8">
+        <h4>💧 VISCOSITY</h4>
+        <div class="metric-value">{visc:,.0f} <span class="metric-unit">cP</span></div>
+        <div style="color:#64748b; font-size:0.8rem">Evaluating...</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # 4. Render Thermodynamic Plot (Boberg-Lantz)
-    fig_thermo = make_subplots(specs=[[{"secondary_y": True}]])
-    
-    # Temperature Line
-    fig_thermo.add_trace(
-        go.Scatter(x=st.session_state.time_history, y=st.session_state.temp_history, 
-                   name="Reservoir Temp (°C)", line=dict(color="#E74C3C", width=3)),
-        secondary_y=False,
-    )
-    # Viscosity Line
-    fig_thermo.add_trace(
-        go.Scatter(x=st.session_state.time_history, y=st.session_state.visc_history, 
-                   name="Viscosity (cP)", line=dict(color="#3498DB", width=3, dash="dot")),
-        secondary_y=True,
-    )
-    
-    # Mark Economic Cut-off threshold (~8000 cP)
-    fig_thermo.add_hline(y=8000, secondary_y=True, line_dash="dash", line_color="yellow", 
-                         annotation_text="Economic Cut-off (8000 cP)", annotation_position="bottom right")
+with m3:
+    st.markdown("""
+    <div class="panel" style="border-top: 3px solid #ef4444">
+        <h4>📈 OIL PRODUCTION</h4>
+        <div class="metric-value">4.4 <span class="metric-unit">bbl/d</span></div>
+        <div class="metric-trend-down">↓ 0.0%</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    fig_thermo.update_layout(
-        title="<b>Reservoir Thermodynamics (Boberg-Lantz)</b>",
-        xaxis_title="Simulation Time (Days)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=20, r=20, t=40, b=20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
-    fig_thermo.update_yaxes(title_text="Temperature (°C)", secondary_y=False)
-    fig_thermo.update_yaxes(title_text="Viscosity (cP)", type="log", secondary_y=True) # Log scale for massive viscosity
+with m4:
+    st.markdown("""
+    <div class="panel" style="border-top: 3px solid #f59e0b">
+        <h4>⚖️ SOR</h4>
+        <div class="metric-value">24.13</div>
+        <div class="metric-trend-down">↓ 0.00</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    thermo_placeholder.plotly_chart(fig_thermo, use_container_width=True, key=f"thermo_{current_time}")
+with m5:
+    st.markdown("""
+    <div class="panel" style="border-top: 3px solid #10b981">
+        <h4>⏱️ PUMP LOAD</h4>
+        <div class="metric-value">38 <span class="metric-unit">%</span></div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # 5. Render Mechanical Plot (PINN Dynamometer Card)
-    fig_mech = go.Figure()
-    
-    pos_m = dyn_data.get("position_m", [])
-    load_kn = dyn_data.get("load_kN", [])
-    
-    fig_mech.add_trace(go.Scatter(
-        x=pos_m, y=load_kn, 
-        mode='lines+markers',
-        marker=dict(color="#2ECC71" if not is_floating else "#E74C3C", size=6),
-        line=dict(color="#2ECC71" if not is_floating else "#E74C3C", width=2),
-        fill="toself",
-        fillcolor="rgba(46, 204, 113, 0.2)" if not is_floating else "rgba(231, 76, 60, 0.3)"
-    ))
-    
-    # Baseline 0 kN to visualize compressive buckling
-    fig_mech.add_hline(y=0, line_dash="dash", line_color="white", opacity=0.5)
+with m6:
+    st.markdown("""
+    <div class="panel" style="border-top: 3px solid #10b981">
+        <h4>⚠️ ROD FAILURE RISK</h4>
+        <div class="metric-value">0 <span class="metric-unit">%</span></div>
+        <div class="metric-trend-down">↓ 0%</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    fig_mech.update_layout(
-        title="<b>PINN Downhole Dynamometer Card</b>",
-        xaxis_title="Plunger Displacement [m]",
-        yaxis_title="Plunger Load [kN]",
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=20, r=20, t=40, b=20),
-        yaxis=dict(range=[-10, 80]), # Fixed scale to show dropping to zero
-        xaxis=dict(range=[-0.2, 3.2])
-    )
-    
-    mech_placeholder.plotly_chart(fig_mech, use_container_width=True, key=f"mech_{current_time}")
+# ===========================================================================
+# AI Analysis Panels (Middle Row)
+# ===========================================================================
+c1, c2, c3 = st.columns(3)
 
-    # 6. Render Autonomous VFD Control Banner
-    # Determine the status text based on highest probability
-    if probs:
-        dom_class = max(probs, key=probs.get)
-    else:
-        dom_class = "Healthy"
+with c1:
+    st.markdown("""
+    <div class="panel">
+        <h4>⚡ What is happening?</h4>
+        <span style='color:#64748b; font-size:0.8rem'>Current well status</span><br><br>
+        <table style="width:100%; color:#cbd5e1; font-size:0.9rem">
+            <tr><td style="padding:4px 0">Reservoir</td><td style="text-align:right; color:#10b981; font-weight:bold">Stable</td></tr>
+            <tr><td style="padding:4px 0">Viscosity</td><td style="text-align:right; color:#10b981; font-weight:bold">Moderate</td></tr>
+            <tr><td style="padding:4px 0">Production</td><td style="text-align:right; color:#ef4444; font-weight:bold">Declining</td></tr>
+            <tr><td style="padding:4px 0">SRP Load</td><td style="text-align:right; color:#10b981; font-weight:bold">Normal</td></tr>
+            <tr><td style="padding:4px 0">Failure Risk</td><td style="text-align:right; color:#10b981; font-weight:bold">LOW</td></tr>
+            <tr><td style="padding:4px 0">CSS Stage</td><td style="text-align:right; color:#38bdf8; font-weight:bold">INJECTION</td></tr>
+        </table>
+    </div>
+    """, unsafe_allow_html=True)
 
-    if dom_class == "Rod Floating":
-        status_html = f"<div class='alert-text-critical'>🚨 CRITICAL: ROD FLOATING ({probs.get('Rod Floating', 0)*100:.0f}%) — Asymmetric Profiling Activated</div>"
-    elif dom_class == "Fluid Pound":
-        status_html = f"<div class='alert-text-warning'>⚠️ WARNING: Fluid Pound ({probs.get('Fluid Pound', 0)*100:.0f}%) — Slowing Operations</div>"
-    else:
-        status_html = f"<div class='alert-text-healthy'>✅ System Nominal ({probs.get('Healthy', 0)*100:.0f}%)</div>"
-
-    with control_placeholder.container():
-        st.markdown("<div class='metric-container'>", unsafe_allow_html=True)
-        st.markdown("### CNN Diagnostics & VFD Actuation")
-        st.markdown(status_html, unsafe_allow_html=True)
+with c2:
+    st.markdown("""
+    <div class="panel">
+        <h4>🤖 What will happen?</h4>
+        <span style='color:#64748b; font-size:0.8rem'>AI prediction</span><br><br>
         
-        # Display the Asymmetric speeds being commanded
-        up = vfd_cmd.get('upstroke_spm', 0)
-        down = vfd_cmd.get('downstroke_spm', 0)
-        torque = vfd_cmd.get('motor_torque_limit_pct', 0)
+        <div style="background:#1e293b; padding:10px; border-radius:6px; margin-bottom:10px">
+            <div style="color:#64748b; font-size:0.7rem; text-transform:uppercase">Production Forecast (next 24h)</div>
+            <div style="font-size:1.5rem; font-weight:bold; color:white">9.7 <span style="font-size:0.9rem; color:#94a3b8">bbl/d</span></div>
+            <div style="color:#10b981; font-size:0.8rem">↑ 5.3 bbl/d predicted change</div>
+        </div>
         
-        st.markdown(
-            f"> **Command Sent to VFD:** Modulate Upstroke to **{up:.1f} SPM**, "
-            f"Downstroke to **{down:.1f} SPM**. Torque Limit set to **{torque:.1f}%**."
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
+        <div style="background:#1e293b; padding:10px; border-radius:6px; margin-bottom:10px">
+            <div style="color:#64748b; font-size:0.7rem; text-transform:uppercase">Risk Forecast</div>
+            <div style="color:#10b981; font-weight:bold; font-size:0.9rem">● LOW - 1%</div>
+        </div>
+        
+        <div style="background:#1e293b; padding:10px; border-radius:6px;">
+            <div style="color:#64748b; font-size:0.7rem; text-transform:uppercase">SOR Forecast</div>
+            <div style="font-size:1.2rem; font-weight:bold; color:white">0.77</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # 7. Regulate refresh rate
-    time.sleep(0.3)
+with c3:
+    st.markdown("""
+    <div class="panel">
+        <h4>⚙️ What should we do?</h4>
+        <span style='color:#64748b; font-size:0.8rem'>AI recommendation</span><br><br>
+        <div style="font-weight:bold; color:white; margin-bottom:10px">Optimize CSS + SRP</div>
+        <div style="color:#94a3b8; font-size:0.85rem; line-height:1.4; margin-bottom:15px">
+            Adjust steam volume from 3200 to 1500 t/cycle. Change injection pressure from 95 to 140 bar. Modify soak time from 72 to 48 hours. Reduce SPM from 5.5 to 6. Adjust stroke length from 3 to 4 m. Change VFD speed from 45 to 35 Hz.
+        </div>
+        
+        <table style="width:100%; color:#cbd5e1; font-size:0.85rem; margin-bottom:15px">
+            <tr><td style="padding:2px 0">Production</td><td style="text-align:right; color:#10b981">+5.32 bbl/d</td></tr>
+            <tr><td style="padding:2px 0">Energy</td><td style="text-align:right; color:#10b981">-158.82 kWh/bbl</td></tr>
+            <tr><td style="padding:2px 0">Failure Risk</td><td style="text-align:right; color:#ef4444">+0.56 %</td></tr>
+            <tr><td style="padding:2px 0">SOR</td><td style="text-align:right; color:#10b981">-23.36</td></tr>
+        </table>
+        
+        <button class="action-btn">Apply Recommendation</button>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ===========================================================================
+# Charts (Bottom Row)
+# ===========================================================================
+ch1, ch2 = st.columns([1.5, 1])
+
+# Placeholder charts matching the dark blue theme
+fig1 = go.Figure()
+fig1.add_trace(go.Scatter(x=[1,2,3,4,5], y=[3.8, 3.9, 4.1, 4.0, 4.4], fill='tozeroy', line=dict(color='#10b981'), fillcolor='rgba(16, 185, 129, 0.1)'))
+fig1.update_layout(
+    title="<span style='color:white; font-size:16px'>📈 Production & Pump Load</span><br><span style='color:#64748b; font-size:12px'>Live simulation trend</span>",
+    plot_bgcolor='#0f172a', paper_bgcolor='#0f172a',
+    margin=dict(l=10, r=10, t=60, b=10),
+    xaxis=dict(showgrid=False, showticklabels=False),
+    yaxis=dict(showgrid=True, gridcolor='#1e293b', tickfont=dict(color='#64748b'))
+)
+
+fig2 = go.Figure()
+fig2.add_trace(go.Scatter(x=[1,2,3,4,5], y=[94.2, 85.0, 72.6, 65.0, 52.5], fill='tozeroy', line=dict(color='#f97316'), fillcolor='rgba(249, 115, 22, 0.1)'))
+fig2.update_layout(
+    title="<span style='color:white; font-size:16px'>🌡️ Reservoir Temperature</span><br><span style='color:#64748b; font-size:12px'>Thermal response</span>",
+    plot_bgcolor='#0f172a', paper_bgcolor='#0f172a',
+    margin=dict(l=10, r=10, t=60, b=10),
+    xaxis=dict(showgrid=False, showticklabels=False),
+    yaxis=dict(showgrid=True, gridcolor='#1e293b', tickfont=dict(color='#64748b'))
+)
+
+with ch1:
+    st.plotly_chart(fig1, use_container_width=True)
+with ch2:
+    st.plotly_chart(fig2, use_container_width=True)
+
+# Auto-refresh mechanism
+time.sleep(2)
+st.rerun()
