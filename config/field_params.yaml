@@ -1,0 +1,19 @@
+# Baghewala Field Parameters — override defaults in source modules
+reservoir:
+  api_gravity_min: 14.0          # degrees API
+  api_gravity_max: 19.0          # degrees API
+  bht_min_c: 46.0                # Bottom-hole temperature, Celsius
+  bht_max_c: 48.0                # Bottom-hole temperature, Celsius
+  viscosity_insitu_min_cp: 10000 # In-situ dynamic viscosity, cP
+  viscosity_insitu_max_cp: 13000 # In-situ dynamic viscosity, cP
+  formation: Jodhpur Sandstone
+
+srp:
+  strokes_per_minute: 4.0        # SPM nominal
+  stroke_length_m: 3.0           # Polished-rod stroke length, m
+  rod_string_od_m: 0.022         # Rod OD, m
+
+css:
+  steam_injection_temp_c: 300.0  # Injected steam temperature, Celsius
+  cycle_duration_days: 45        # Total CSS cycle duration
+  soak_duration_days: 7          # Soak period within cycle
